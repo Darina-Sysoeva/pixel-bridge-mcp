@@ -115,9 +115,16 @@ export abstract class BaseChatProvider implements ImageProvider {
           /* screenshot is best-effort */
         }
         throw err;
+      } finally {
+        await this.archiveChat(page, req).catch((err) =>
+          req.log(`Chat was not archived: ${String(err)}`)
+        );
       }
     });
   }
+
+  /** Move the chat this job used out of the history. Providers opt in. */
+  protected async archiveChat(_page: Page, _req: GenerateRequest): Promise<void> {}
 
   private async generateOnPage(page: Page, req: GenerateRequest): Promise<CapturedImage[]> {
     await this.gotoFresh(page);

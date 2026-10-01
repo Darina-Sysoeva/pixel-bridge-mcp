@@ -43,6 +43,10 @@ npm run login -- gemini
 
 Tip: set `PIXEL_BRIDGE_BROWSER_CHANNEL=chrome` to use your installed Google Chrome instead of the bundled Chromium.
 
+The managed browser is **shared**. The first call starts it as a detached process; every later bridge process (each Claude Code session, any one-off script) attaches to the same window through the DevTools port the browser records in its profile (`DevToolsActivePort`). A process closes only its own tab on exit, so the window stays until you quit the browser, and the next call starts it again with the same login. The port listens on `127.0.0.1` only, but while the browser runs any local program can drive it. `PIXEL_BRIDGE_SHARED_BROWSER=0` restores one browser per server process; `PIXEL_BRIDGE_BROWSER_CHANNEL` applies only there, the shared browser uses `PIXEL_BRIDGE_EXECUTABLE_PATH` or the bundled Chromium.
+
+After each ChatGPT generation, successful or not, the bridge archives the chat it used (chat menu → Archive), so its chats don't pile up in your history. Only a chat whose first message is a bridge prompt is touched. Archived chats stay available: chat menu → Unarchive, or the archived chats list in ChatGPT settings.
+
 ### Option B — Attach to your own browser (use your existing logins)
 
 Instead of letting Pixel Bridge launch its own browser, you can attach it to a real Chrome/Edge/Brave **you** started, and it will use whatever logins that browser already has. Start your browser with a debugging port and a dedicated profile folder:
@@ -160,6 +164,7 @@ Reliability decisions:
 | `PIXEL_BRIDGE_BROWSER_CHANNEL` | – | e.g. `chrome` to use your installed Chrome instead of bundled Chromium |
 | `PIXEL_BRIDGE_EXECUTABLE_PATH` | – | Explicit browser binary path |
 | `PIXEL_BRIDGE_CDP_URL` | – | Attach mode: connect to your own running browser (e.g. `http://127.0.0.1:9222`) instead of launching one |
+| `PIXEL_BRIDGE_SHARED_BROWSER` | `true` | One managed browser per profile, shared by all bridge processes and left open between them; `0` gives each process its own browser |
 | `PIXEL_BRIDGE_GENERATION_TIMEOUT_S` | `300` | Hard ceiling per generation |
 | `PIXEL_BRIDGE_DEFAULT_WAIT_S` | `150` | Default inline wait before returning a job id |
 | `PIXEL_BRIDGE_LOGIN_TIMEOUT_S` | `300` | Manual-login wait |

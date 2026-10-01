@@ -29,6 +29,15 @@ export interface Config {
    * Example: http://127.0.0.1:9222
    */
   cdpUrl: string | undefined;
+  /**
+   * Shared mode (default on): one browser per provider profile that outlives
+   * any single bridge process. The first call starts it detached with a
+   * remote-debugging port; later processes find it through the profile's
+   * DevToolsActivePort file and attach. A process closes only its own tab on
+   * shutdown, so the window stays until the user closes it.
+   * PIXEL_BRIDGE_SHARED_BROWSER=0 restores one browser per process.
+   */
+  sharedBrowser: boolean;
   /** Hard ceiling for a single generation job, in ms. */
   generationTimeoutMs: number;
   /** Default time generate_image waits inline before returning a job id, in ms. */
@@ -68,6 +77,7 @@ export function loadConfig(): Config {
     browserChannel: process.env.PIXEL_BRIDGE_BROWSER_CHANNEL || undefined,
     executablePath: process.env.PIXEL_BRIDGE_EXECUTABLE_PATH || undefined,
     cdpUrl: process.env.PIXEL_BRIDGE_CDP_URL || undefined,
+    sharedBrowser: envBool("PIXEL_BRIDGE_SHARED_BROWSER", true),
     generationTimeoutMs: envInt("PIXEL_BRIDGE_GENERATION_TIMEOUT_S", 300) * 1000,
     defaultWaitMs: envInt("PIXEL_BRIDGE_DEFAULT_WAIT_S", 150) * 1000,
     loginTimeoutMs: envInt("PIXEL_BRIDGE_LOGIN_TIMEOUT_S", 300) * 1000,
