@@ -97,10 +97,12 @@ export class ChatGptProvider extends BaseChatProvider {
 
     const readFirstPrompt = () =>
       page.evaluate(() => document.querySelector("[data-user-message-bubble]")?.textContent ?? "");
-    let firstPrompt = await readFirstPrompt();
-    let menu = await this.findFirst(page, this.chatMenuSelectors);
-    // Load the chat only if it is not on screen. ChatGPT fails to load a chat
+    // Always reload the chat. Right after a generation ChatGPT shows a short
+    // chat menu (Pin / Plugins / Files) without Archive; the full one appears
+    // only once the chat is loaded from scratch. ChatGPT fails to load a chat
     // now and then ("Couldn't load this conversation"), hence a second try.
+    let firstPrompt = "";
+    let menu = null;
     for (let attempt = 0; attempt < 2 && !(firstPrompt && menu); attempt++) {
       await page.goto(`https://chatgpt.com/c/${id}`, { waitUntil: "domcontentloaded" });
       for (let i = 0; i < 15 && !(firstPrompt && menu); i++) {
@@ -121,9 +123,13 @@ export class ChatGptProvider extends BaseChatProvider {
     // sidebar: an archived chat drops out of it. A new chat is always listed
     // there; an old one may not be loaded, and then success stays unconfirmed.
     const sidebarLink = page.locator(`a[href="/c/${id}"]`).first();
-    const listed = (await sidebarLink.count()) > 0;
+    // After the reload the sidebar fills in a beat later than the chat.
+    const listed = await sidebarLink.waitFor({ state: "attached", timeout: 5000 }).then(
+      () => true,
+      () => false
+    );
     if (!(await this.clickChatMenuItem(page, /^(Архивировать|Archive)$/i))) {
-      throw new Error("the Archive item could not be clicked");
+      throw new Error(`the Archive item could not be clicked; menu had: ${this.lastMenuItems.join(", ") || "nothing"}`);
     }
     if (!listed) {
       req.log(`Chat ${id} archived, unconfirmed: it was not in the sidebar to begin with`);
@@ -136,6 +142,9 @@ export class ChatGptProvider extends BaseChatProvider {
     if (!gone) throw new Error(`chat ${id} is still in the sidebar after clicking Archive`);
     req.log(`Chat ${id} archived`);
   }
+
+  /** What the chat menu offered on the last failed try, for the log. */
+  private lastMenuItems: string[] = [];
 
   /**
    * Open the chat menu and click the item matching `name`. For a while after
@@ -156,6 +165,10 @@ export class ChatGptProvider extends BaseChatProvider {
       ) {
         return true;
       }
+      this.lastMenuItems = await page
+        .getByRole("menuitem")
+        .allTextContents()
+        .then((t) => t.map((s) => s.trim()).filter(Boolean), () => []);
       await page.keyboard.press("Escape").catch(() => undefined);
       await page.waitForTimeout(1000);
     }

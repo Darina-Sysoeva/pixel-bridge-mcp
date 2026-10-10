@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { chromium, type Browser, type BrowserContext, type Page } from "playwright";
@@ -249,23 +249,18 @@ async function launchShared(profileDir: string): Promise<Browser> {
   // here would add one more tab on every start.
 
   const stale = readDevToolsEndpoint(profileDir);
-  log.info(`Starting shared browser (profile: ${profileDir}, headless: ${config.headless})`);
-  const child = spawn(config.executablePath ?? chromium.executablePath(), args, {
-    detached: true,
-    stdio: "ignore",
-  });
-  let exitedEarly: string | null = null;
-  child.on("error", (err) => (exitedEarly = String(err)));
-  // Exit code 0 at once means another Chrome already had the profile and took
-  // over. If that is a shared browser another bridge process is starting right
-  // now, its port shows up shortly, so only other exit codes stop the wait.
-  child.on("exit", (code) => {
-    if (code !== 0) exitedEarly = `exit code ${code}`;
-  });
-  child.unref();
+  // On this Mac a cold start of the profile's Chrome has taken 80-90 s before
+  // its debugging port showed up. A retry in that window used to spawn one
+  // more Chrome each time; now it waits for the one already starting.
+  const early = { reason: null as string | null };
+  if (profileBrowserRunning(profileDir)) {
+    log.info(`Shared browser for ${profileDir} is still starting, waiting for it`);
+  } else {
+    spawnShared(profileDir, args, early);
+  }
 
-  const deadline = Date.now() + 30_000;
-  while (Date.now() < deadline && !exitedEarly) {
+  const deadline = Date.now() + 120_000;
+  while (Date.now() < deadline && !early.reason) {
     await new Promise((r) => setTimeout(r, 500));
     const endpoint = readDevToolsEndpoint(profileDir);
     if (!endpoint || endpoint === stale) continue;
@@ -273,10 +268,37 @@ async function launchShared(profileDir: string): Promise<Browser> {
     if (browser) return browser;
   }
   throw new Error(
-    `The shared browser for ${profileDir} did not come up (${exitedEarly ?? "timed out"}). ` +
+    `The shared browser for ${profileDir} did not come up (${early.reason ?? "timed out"}). ` +
       `If another Chrome already holds this profile, e.g. one started by an older bridge in ` +
       `another Claude session, close that window or restart that session, then retry.`
   );
+}
+
+/** True if a Chrome main process for this profile is alive, ready or not. */
+function profileBrowserRunning(profileDir: string): boolean {
+  try {
+    return execFileSync("ps", ["-axo", "command="], { encoding: "utf8" })
+      .split("\n")
+      .some((cmd) => cmd.includes(`--user-data-dir=${profileDir} `) && !cmd.includes("--type="));
+  } catch {
+    return false;
+  }
+}
+
+function spawnShared(profileDir: string, args: string[], early: { reason: string | null }): void {
+  log.info(`Starting shared browser (profile: ${profileDir}, headless: ${config.headless})`);
+  const child = spawn(config.executablePath ?? chromium.executablePath(), args, {
+    detached: true,
+    stdio: "ignore",
+  });
+  child.on("error", (err) => (early.reason = String(err)));
+  // Exit code 0 at once means another Chrome already had the profile and took
+  // over. If that is a shared browser another bridge process is starting right
+  // now, its port shows up shortly, so only other exit codes stop the wait.
+  child.on("exit", (code) => {
+    if (code !== 0) early.reason = `exit code ${code}`;
+  });
+  child.unref();
 }
 
 export const browserManager = new BrowserManager();
